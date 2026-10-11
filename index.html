@@ -1,0 +1,1315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>极限刹车挑战 · V800</title>
+<style>
+:root {
+  --gold: #d8c39a;
+  --gold-strong: #f1dcae;
+  --ink: #f5efe6;
+  --muted: #f5efe69e;
+  --glass: #100c0e8c;
+  --line: #d8c39a47;
+  --danger: #ff4b3a;
+  --ok: #5fe0a0;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #120d10;
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+canvas { display: block; position: fixed; inset: 0; }
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+.hud-top {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 14px; right: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.hud-chip {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 8px 14px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.hud-chip .label { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.hud-chip .value { font-size: 22px; font-weight: 700; color: var(--gold-strong); font-variant-numeric: tabular-nums; }
+
+.mono { font-variant-numeric: tabular-nums; font-family: "SF Mono", "DIN Alternate", "Roboto Mono", Menlo, monospace; }
+
+.speedo {
+  position: absolute;
+  left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(300px, 62vw);
+}
+.speedo-svg { width: 100%; display: block; overflow: visible; }
+.speedo-track, .speedo-arc {
+  fill: none; stroke-width: 10px; stroke-linecap: round;
+}
+.speedo-track { stroke: rgba(255,255,255,0.12); }
+.speedo-arc {
+  stroke: var(--gold);
+  filter: drop-shadow(0 0 6px rgba(241,220,174,0.7));
+  transition: stroke .2s;
+}
+.speedo-arc.ready { stroke: var(--ok); filter: drop-shadow(0 0 8px rgba(95,224,160,0.9)); }
+.speedo-readout {
+  position: absolute; bottom: 4px; left: 0; right: 0;
+  text-align: center; line-height: 1;
+}
+.speedo-readout .speed { font-size: clamp(44px, 12vw, 64px); font-weight: 800; text-shadow: 0 2px 16px rgba(0,0,0,0.6); }
+.speedo-readout .unit { display: block; font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+.force {
+  position: absolute;
+  left: calc(16px + env(safe-area-inset-left));
+  top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.force-label { font-size: 12px; color: var(--muted); }
+.force-bar {
+  width: 22px; height: min(46vh, 300px);
+  border: 1px solid var(--line);
+  background: rgba(0,0,0,0.45);
+  border-radius: 11px;
+  position: relative;
+  overflow: visible;
+}
+.force-fill {
+  position: absolute; bottom: 2px; left: 2px; right: 2px;
+  height: 0;
+  background: linear-gradient(to top, #5fe0a0, #f4d35e 60%, #ff7a2f 85%, #ff2d2d);
+  border-radius: 9px;
+  box-shadow: 0 0 14px rgba(255,120,60,0.5);
+  transition: height .05s linear;
+}
+.force-limit {
+  position: absolute; top: 6%; left: -6px; right: -6px;
+  height: 2px; background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+.force-limit span {
+  position: absolute; top: -8px; left: 36px;
+  color: var(--danger); font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.force-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.force.danger .force-value { color: var(--danger); animation: blink .25s steps(2, end) infinite; }
+@keyframes blink { 50% { opacity: .3; } }
+
+.brake-btn {
+  position: absolute;
+  right: calc(22px + env(safe-area-inset-right));
+  bottom: calc(26px + env(safe-area-inset-bottom));
+  width: clamp(104px, 26vw, 140px);
+  height: clamp(104px, 26vw, 140px);
+  border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.18);
+  background: radial-gradient(circle at 35% 30%, #5a5458, #1d1a1c 70%);
+  color: rgba(255,255,255,0.4);
+  font-size: 22px; font-weight: 800;
+  letter-spacing: .1em;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px;
+  pointer-events: auto;
+  transition: transform .08s, box-shadow .2s, background .2s;
+  touch-action: none;
+}
+.brake-btn.ready {
+  color: #fff;
+  background: radial-gradient(circle at 35% 30%, #ff6a52, #b3140b 70%);
+  border-color: rgba(255,90,70,0.9);
+  box-shadow: 0 0 0 6px rgba(255,75,58,0.18), 0 0 36px rgba(255,60,40,0.65);
+  animation: pulse .9s ease-in-out infinite;
+}
+.brake-btn.pressed {
+  transform: scale(.92);
+  animation: none;
+  box-shadow: 0 0 0 10px rgba(255,75,58,0.3), 0 0 50px rgba(255,60,40,0.9);
+}
+@keyframes pulse {
+  50% { box-shadow: 0 0 0 14px rgba(255,75,58,0.08), 0 0 46px rgba(255,60,40,0.8); }
+}
+
+.countdown {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(96px, 28vw, 180px);
+  font-weight: 900;
+  color: var(--gold-strong);
+  text-shadow: 0 0 40px rgba(241,220,174,0.7);
+  pointer-events: none;
+  animation: pop .9s ease-out;
+}
+@keyframes pop {
+  0% { opacity: 0; transform: scale(1.6); }
+  30% { opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.toast {
+  position: fixed;
+  top: 26%; left: 50%;
+  transform: translate(-50%, 0);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid var(--line);
+  font-size: 15px; font-weight: 600;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast.alert {
+  background: rgba(200,30,20,0.85);
+  border-color: rgba(255,120,100,0.8);
+  color: #fff;
+  font-size: 20px;
+}
+
+.hidden { display: none !important; }
+
+/* 面板 */
+.panel {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(460px, 100vw - 28px);
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+  padding: 26px 24px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, rgba(30,22,24,0.92), rgba(12,9,11,0.95));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+  text-align: center;
+}
+
+.menu { top: auto; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translate(-50%, 0); }
+
+.brand { font-size: 12px; letter-spacing: .4em; color: var(--gold); }
+h1 {
+  font-size: clamp(30px, 8vw, 40px);
+  margin: 8px 0 4px;
+  letter-spacing: .06em;
+  background: linear-gradient(180deg, #fff6e2, var(--gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+h2 { font-size: 26px; margin: 0 0 6px; }
+.tagline { color: var(--muted); margin: 0 0 14px; }
+
+.rules {
+  text-align: left;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: rgba(245,239,230,0.86);
+}
+.rules li::before {
+  content: "◆";
+  color: var(--gold);
+  margin-right: 8px;
+  font-size: 9px;
+  vertical-align: 2px;
+}
+.danger { color: var(--danger); }
+
+.actions { display: flex; gap: 10px; }
+.btn {
+  flex: 1;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.06);
+  color: var(--ink);
+  font-size: 16px; font-weight: 700;
+  cursor: pointer;
+}
+.btn.primary {
+  background: linear-gradient(#f6e5bf, #c9a86c);
+  color: #20170c;
+  border: none;
+  box-shadow: 0 8px 24px rgba(201,168,108,0.35);
+}
+.btn:disabled { opacity: .5; cursor: default; }
+
+.result-sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+.result h2.ok { color: var(--ok); }
+.result h2.fail { color: var(--danger); }
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.stats > div {
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.stats .label { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.stats .mono { font-size: 20px; font-weight: 700; }
+
+.score-box { display: flex; flex-direction: column; margin-bottom: 14px; }
+.score { font-size: 46px; font-weight: 900; color: var(--gold-strong); font-variant-numeric: tabular-nums; }
+
+.actions { margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="hud-top">
+    <div class="hud-chip">
+      <span class="label">制动计时</span>
+      <span id="hudTimer" class="value mono">0.000s</span>
+    </div>
+    <div class="hud-chip">
+      <span class="label">距路障</span>
+      <span id="hudDistance" class="value mono">2600m</span>
+    </div>
+  </div>
+
+  <div class="speedo">
+    <svg viewBox="0 0 200 120" class="speedo-svg">
+      <path class="speedo-track" d="M 20 110 A 80 80 0 0 1 180 110" />
+      <path id="speedoArc" class="speedo-arc" d="M 20 110 A 80 80 0 0 1 180 110" />
+      <line id="speedoMark" class="speedo-mark" x1="0" y1="0" x2="0" y2="0" />
+    </svg>
+    <div class="speedo-readout">
+      <span id="hudSpeed" class="speed mono">0</span>
+      <span class="unit">km/h</span>
+    </div>
+  </div>
+
+  <div class="force">
+    <div class="force-label">踏板力度</div>
+    <div class="force-bar">
+      <div id="forceFill" class="force-fill"></div>
+      <div class="force-limit"><span>1612N</span></div>
+    </div>
+    <div id="forceValue" class="force-value mono">0 N</div>
+  </div>
+
+  <button id="brakeBtn" class="brake-btn" disabled>
+    <span class="brake-icon"></span>
+    <span id="brakeText">刹车</span>
+  </button>
+</div>
+
+<div id="countdown" class="countdown hidden"></div>
+<div id="toast" class="toast hidden"></div>
+
+<!-- 菜单 -->
+<section id="menu" class="panel menu">
+  <div class="brand">ZUNJIE · V800</div>
+  <h1>极限刹车挑战</h1>
+  <p class="tagline">越快踩，越快停。别把刹车踏板踩断。</p>
+  <ul class="rules">
+    <li>车辆自动全力加速，<b>100 km/h</b> 后才能踩刹车</li>
+    <li>一踩下刹车，动力立即切断；<b>按得越久，力度越大</b></li>
+    <li>力度达到 <b class="danger">1612 N</b> 刹车踏板断裂，整车翻滚失败</li>
+    <li>得分 = 刹车初速度² ÷ 刹停用时，越高越好</li>
+  </ul>
+  <div class="actions">
+    <button id="startBtn" class="btn primary">开始挑战</button>
+  </div>
+  <p class="hint-keys">按住 <b>空格</b> 或点击右下角按钮踩刹车</p>
+</section>
+
+<!-- 结果 -->
+<section id="result" class="panel result hidden">
+  <h2 id="resultTitle">刹停成功</h2>
+  <p id="resultSub" class="result-sub"></p>
+  <div class="stats">
+    <div><span class="label">刹车初速度</span><span id="statV0" class="mono">-</span></div>
+    <div><span class="label">刹停用时</span><span id="statTime" class="mono">-</span></div>
+    <div><span class="label">制动距离</span><span id="statDist" class="mono">-</span></div>
+    <div><span class="label">最大踏板力</span><span id="statForce" class="mono">-</span></div>
+  </div>
+  <div class="score-box">
+    <span class="label">得分</span>
+    <span id="statScore" class="score mono">0</span>
+  </div>
+  <div class="actions">
+    <button id="retryBtn" class="btn primary">再来一次</button>
+  </div>
+</section>
+
+<script>
+(() => {
+  'use strict';
+
+  // ============ 配置 ============
+  const CONFIG = {
+    car: {
+      massKg: 2800,
+      maxSpeedKmh: 260,
+      launchAccel: 7.4,
+      accelFalloffExp: 1.55,
+    },
+    brake: {
+      minSpeedKmh: 100,
+      breakForceN: 1612,
+      rampBase: 200,        // 踏板力基础增长率 N/s
+      rampGrowth: 400,      // 增长加速度 N/s²
+      releaseRate: 900,     // 松开时下降速率 N/s
+      decelPerNewton: 10.8 / 1612, // 每牛顿产生的减速度 m/s²
+      rollingDecel: 0.15,
+      dragCoeff: 0.00022,
+      stopSpeed: 0.08,      // m/s，认为停住
+    },
+    track: {
+      barrierDistance: 2600,
+      roadWidth: 14,
+    },
+    score: (v0Kmh, t) => t <= 0 ? 0 : Math.round(v0Kmh * v0Kmh / t),
+  };
+
+  const KMH_TO_MS = 1 / 3.6;
+  const MS_TO_KMH = 3.6;
+
+  // ============ 状态 ============
+  const Phase = {
+    MENU: 'menu',
+    COUNTDOWN: 'countdown',
+    ACCEL: 'accel',
+    BRAKE: 'brake',
+    STOPPED: 'stopped',
+    CRASHED: 'crashed',
+  };
+
+  const state = {
+    phase: Phase.MENU,
+    speed: 0,          // m/s
+    distance: 0,       // m
+    pedalForce: 0,     // N
+    powerCut: false,
+    holdTime: 0,
+    brakeElapsed: 0,
+    v0Kmh: 0,
+    peakForce: 0,
+    brakeStartDistance: 0,
+    countdown: 0,
+    lastCountdownTick: 0,
+    crashReason: '',
+    crashTimer: 0,
+    crashVelocity: 0,
+    // 视觉
+    shake: 0,
+    flash: 0,
+    wheelSpin: 0,
+    brakeHeat: 0,
+    carTilt: 0,
+    carRoll: 0,
+  };
+
+  const input = {
+    pressed: false,
+  };
+
+  // ============ 元素引用 ============
+  const $ = id => document.getElementById(id);
+  const hud = $('hud');
+  const hudTimer = $('hudTimer');
+  const hudDistance = $('hudDistance');
+  const hudSpeed = $('hudSpeed');
+  const speedoArc = $('speedoArc');
+  const speedoMark = $('speedoMark');
+  const forceFill = $('forceFill');
+  const forceValue = $('forceValue');
+  const forceBox = forceFill.closest('.force');
+  const brakeBtn = $('brakeBtn');
+  const brakeText = $('brakeText');
+  const countdownEl = $('countdown');
+  const toastEl = $('toast');
+  const menuEl = $('menu');
+  const resultEl = $('result');
+  const resultTitle = $('resultTitle');
+  const resultSub = $('resultSub');
+  const statV0 = $('statV0');
+  const statTime = $('statTime');
+  const statDist = $('statDist');
+  const statForce = $('statForce');
+  const statScore = $('statScore');
+
+  // 速度弧初始
+  const arcLen = speedoArc.getTotalLength();
+  speedoArc.style.strokeDasharray = `${arcLen}`;
+  speedoArc.style.strokeDashoffset = `${arcLen}`;
+  // 100km/h 刻度
+  {
+    const t = Math.PI - (CONFIG.brake.minSpeedKmh / CONFIG.car.maxSpeedKmh) * Math.PI;
+    speedoMark.setAttribute('x1', `${100 + Math.cos(t) * 66}`);
+    speedoMark.setAttribute('y1', `${110 - Math.sin(t) * 66}`);
+    speedoMark.setAttribute('x2', `${100 + Math.cos(t) * 94}`);
+    speedoMark.setAttribute('y2', `${110 - Math.sin(t) * 94}`);
+  }
+
+  let toastTimer = 0;
+  function showToast(msg, alert = false, ms = 1400) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('alert', alert);
+    toastEl.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.add('hidden'), ms);
+  }
+  function hideToast() {
+    clearTimeout(toastTimer);
+    toastEl.classList.add('hidden');
+  }
+  function showCountdown(text) {
+    if (text === null) {
+      countdownEl.classList.add('hidden');
+      return;
+    }
+    countdownEl.textContent = text;
+    countdownEl.classList.remove('hidden');
+    countdownEl.style.animation = 'none';
+    void countdownEl.offsetWidth;
+    countdownEl.style.animation = '';
+  }
+
+  // ============ 音频 ============
+  const audio = (() => {
+    let ctx = null, master = null, muted = false;
+    function unlock() {
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        master = ctx.createGain();
+        master.gain.value = muted ? 0 : 0.6;
+        master.connect(ctx.destination);
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+    function tone(freq, dur, type = 'sine', vol = 0.2) {
+      if (!ctx) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(master);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
+    return {
+      unlock,
+      setMuted(v) { muted = v; if (master) master.gain.value = v ? 0 : 0.6; },
+      get muted() { return muted; },
+      beep(hi = false) { tone(hi ? 1320 : 660, 0.18, 'square', 0.15); },
+      click() { tone(880, 0.05, 'sine', 0.08); },
+      success() {
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+          setTimeout(() => tone(f, 0.3, 'triangle', 0.15), i * 110);
+        });
+      },
+      fail() {
+        [392, 311.13, 233.08].forEach((f, i) => {
+          setTimeout(() => tone(f, 0.25, 'sawtooth', 0.12), i * 200);
+        });
+      },
+      snap() {
+        if (!ctx) return;
+        const t = ctx.currentTime;
+        // 干脆的爆裂声
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const g = ctx.createGain();
+        g.gain.value = 0.6;
+        src.connect(g).connect(master);
+        src.start(t);
+        // 金属高频
+        [1850, 2930, 4410, 6120].forEach((f, i) => tone(f, 0.2, 'sine', 0.08));
+      },
+      thud(intensity = 1) {
+        if (!ctx) return;
+        const t = ctx.currentTime;
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(120, t);
+        o.frequency.exponentialRampToValueAtTime(35, t + 0.4);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.4 * intensity, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        o.connect(g).connect(master);
+        o.start(t);
+        o.stop(t + 0.55);
+      },
+    };
+  })();
+
+  // ============ 游戏逻辑 ============
+  function resetState() {
+    state.speed = 0;
+    state.distance = 0;
+    state.pedalForce = 0;
+    state.powerCut = false;
+    state.holdTime = 0;
+    state.brakeElapsed = 0;
+    state.v0Kmh = 0;
+    state.peakForce = 0;
+    state.brakeStartDistance = 0;
+    state.countdown = 0;
+    state.lastCountdownTick = 0;
+    state.crashReason = '';
+    state.crashTimer = 0;
+    state.crashVelocity = 0;
+    state.shake = 0;
+    state.flash = 0;
+    state.wheelSpin = 0;
+    state.brakeHeat = 0;
+    state.carTilt = 0;
+    state.carRoll = 0;
+  }
+
+  function startGame() {
+    audio.unlock();
+    audio.click();
+    resetState();
+    menuEl.classList.add('hidden');
+    resultEl.classList.add('hidden');
+    hud.classList.remove('hidden');
+    hideToast();
+    state.phase = Phase.COUNTDOWN;
+    state.countdown = 3;
+    state.lastCountdownTick = 4;
+    showCountdown('3');
+  }
+
+  function showResult() {
+    hud.classList.add('hidden');
+    resultEl.classList.remove('hidden');
+    const success = state.phase === Phase.STOPPED;
+    if (success) {
+      resultTitle.textContent = '刹停成功';
+      resultTitle.className = 'ok';
+      resultSub.textContent = '稳稳停住，V800 毫发无损';
+    } else if (state.crashReason === 'snap') {
+      resultTitle.textContent = '刹车踏板断裂';
+      resultTitle.className = 'fail';
+      resultSub.textContent = `踏板力度达到 ${CONFIG.brake.breakForceN} N，整车失控翻滚飞出`;
+    } else {
+      resultTitle.textContent = '撞上路障';
+      resultTitle.className = 'fail';
+      resultSub.textContent = '没能在路障前刹停，再果断一点';
+    }
+    const hasV0 = state.v0Kmh > 0;
+    statV0.textContent = hasV0 ? `${state.v0Kmh.toFixed(1)} km/h` : '-';
+    statTime.textContent = hasV0 ? `${state.brakeElapsed.toFixed(3)} s` : '-';
+    statDist.textContent = hasV0 ? `${(state.distance - state.brakeStartDistance).toFixed(1)} m` : '-';
+    statForce.textContent = hasV0 ? `${Math.round(state.peakForce)} N` : '-';
+    const score = success ? CONFIG.score(state.v0Kmh, state.brakeElapsed) : 0;
+    statScore.textContent = `${score}`;
+  }
+
+  function distanceToBarrier() {
+    return CONFIG.track.barrierDistance - state.distance;
+  }
+
+  function canBrake() {
+    return state.phase === Phase.ACCEL && state.speed * MS_TO_KMH >= CONFIG.brake.minSpeedKmh;
+  }
+
+  function triggerCrash(reason) {
+    state.phase = Phase.CRASHED;
+    state.crashReason = reason;
+    state.crashTimer = 0;
+    state.crashVelocity = state.speed;
+    state.shake = 1.0;
+    state.flash = 1.0;
+    if (reason === 'snap') {
+      audio.snap();
+      showToast('刹车踏板断裂！', true, 2200);
+    } else {
+      audio.thud(Math.min(1, state.speed / 60));
+      showToast('撞上路障！', true, 2200);
+    }
+    audio.fail();
+    setTimeout(() => {
+      if (state.phase === Phase.CRASHED) showResult();
+    }, 3500);
+  }
+
+  function updatePhysics(dt) {
+    const car = CONFIG.car;
+    const brake = CONFIG.brake;
+    const maxSpeedMs = car.maxSpeedKmh * KMH_TO_MS;
+
+    // 开始刹车
+    if (input.pressed && state.phase === Phase.ACCEL) {
+      if (canBrake()) {
+        state.phase = Phase.BRAKE;
+        state.powerCut = true;
+        state.v0Kmh = state.speed * MS_TO_KMH;
+        state.brakeStartDistance = state.distance;
+        state.brakeElapsed = 0;
+        audio.click();
+        showToast(`动力切断 · 初速度 ${state.v0Kmh.toFixed(1)} km/h`);
+      } else if (state.speed * MS_TO_KMH < brake.minSpeedKmh) {
+        // 太早踩，提示（限频）
+        if (!state._earlyHintAt || performance.now() - state._earlyHintAt > 1200) {
+          state._earlyHintAt = performance.now();
+          showToast(`车速达到 ${brake.minSpeedKmh} km/h 后才能刹车`);
+        }
+      }
+    }
+
+    let accel = 0;
+
+    if (state.powerCut) {
+      // 踏板力更新
+      if (input.pressed) {
+        state.holdTime += dt;
+        state.pedalForce += (brake.rampBase + 2 * brake.rampGrowth * state.holdTime) * dt;
+      } else {
+        state.holdTime = 0;
+        state.pedalForce = Math.max(0, state.pedalForce - brake.releaseRate * dt);
+      }
+      state.peakForce = Math.max(state.peakForce, state.pedalForce);
+
+      // 踏板断裂
+      if (state.pedalForce >= brake.breakForceN) {
+        state.pedalForce = brake.breakForceN;
+        state.peakForce = brake.breakForceN;
+        triggerCrash('snap');
+        return;
+      }
+
+      // 减速度
+      accel = -(brake.rollingDecel + brake.dragCoeff * state.speed * state.speed + brake.decelPerNewton * state.pedalForce);
+    } else {
+      // 加速（带衰减）
+      const ratio = Math.min(state.speed / maxSpeedMs, 1);
+      accel = car.launchAccel * (1 - Math.pow(ratio, car.accelFalloffExp));
+    }
+
+    state.speed = Math.max(0, state.speed + accel * dt);
+    state.distance += state.speed * dt;
+
+    if (state.phase === Phase.BRAKE) {
+      state.brakeElapsed += dt;
+
+      // 撞路障
+      if (distanceToBarrier() <= 0) {
+        triggerCrash('barrier');
+        return;
+      }
+      // 停住
+      if (state.speed <= brake.stopSpeed) {
+        state.speed = 0;
+        state.phase = Phase.STOPPED;
+        audio.success();
+        showToast('完美刹停！', false, 1600);
+        setTimeout(() => {
+          if (state.phase === Phase.STOPPED) showResult();
+        }, 1200);
+        return;
+      }
+    } else if (state.phase === Phase.ACCEL) {
+      // 加速阶段也可能撞路障（没刹住）
+      if (distanceToBarrier() <= 0) {
+        triggerCrash('barrier');
+        return;
+      }
+    }
+  }
+
+  function updateVisuals(dt) {
+    // 视觉平滑
+    state.shake = Math.max(0, state.shake - dt * 1.5);
+    state.flash = Math.max(0, state.flash - dt * 2.0);
+
+    // 刹车热
+    const ratio = state.pedalForce / CONFIG.brake.breakForceN;
+    const targetHeat = state.phase === Phase.BRAKE ? ratio : 0;
+    state.brakeHeat += (targetHeat - state.brakeHeat) * Math.min(1, dt * 3);
+
+    // 车身倾斜（加速时后仰，刹车时前倾）
+    const accelVisual = state.powerCut ? -0.05 * ratio : 0.02;
+    state.carTilt += (accelVisual - state.carTilt) * Math.min(1, dt * 4);
+
+    // 翻滚（撞车）
+    if (state.phase === Phase.CRASHED) {
+      state.crashTimer += dt;
+      const t = state.crashTimer;
+      state.carRoll = t * 3;
+      state.carTilt = Math.min(1, t * 1.2) * 1.4;
+      state.crashVelocity = Math.max(0, state.crashVelocity - 20 * dt);
+    }
+
+    // 车轮旋转
+    if (state.phase !== Phase.CRASHED) {
+      state.wheelSpin += state.speed * dt * 2;
+    }
+  }
+
+  // ============ HUD 更新 ============
+  let lastSpeedText = '';
+  function updateHUD() {
+    const speedKmh = state.speed * MS_TO_KMH;
+    const speedText = `${Math.round(speedKmh)}`;
+    if (speedText !== lastSpeedText) {
+      hudSpeed.textContent = speedText;
+      lastSpeedText = speedText;
+    }
+    const t = Math.min(1, speedKmh / CONFIG.car.maxSpeedKmh);
+    speedoArc.style.strokeDashoffset = `${arcLen * (1 - t)}`;
+    speedoArc.classList.toggle('ready', speedKmh >= CONFIG.brake.minSpeedKmh);
+
+    hudTimer.textContent = `${state.brakeElapsed.toFixed(3)}s`;
+    hudDistance.textContent = `${Math.max(0, Math.round(distanceToBarrier()))}m`;
+
+    const ratio = state.pedalForce / CONFIG.brake.breakForceN;
+    forceFill.style.height = `calc(${Math.min(1, ratio) * 94}% - 2px)`;
+    forceValue.textContent = `${Math.round(state.pedalForce)} N`;
+    forceBox.classList.toggle('danger', ratio > 0.85);
+
+    const cb = canBrake();
+    brakeBtn.disabled = !(cb || state.phase === Phase.BRAKE);
+    brakeBtn.classList.toggle('ready', cb || state.phase === Phase.BRAKE);
+    brakeBtn.classList.toggle('pressed', input.pressed && (cb || state.phase === Phase.BRAKE));
+    brakeText.textContent = state.phase === Phase.BRAKE ? '按住加力' : cb ? '踩刹车!' : '刹车';
+  }
+
+  // ============ 渲染 ============
+  const canvas = $('game');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // 透视参数
+  const CAM = {
+    height: 4.5,   // 相机高度 m
+    back: 5,       // 相机在车后多少米
+    horizonRatio: 0.42,
+  };
+
+  function projectPoint(wx, wy, wz) {
+    // wx: 相对道路中心的横向偏移 (m)
+    // wy: 高度 (m)
+    // wz: 前方距离 (m)
+    const horizonY = H * CAM.horizonRatio;
+    const cx = W / 2;
+    const dz = wz + CAM.back;
+    if (dz <= 0.5) return null;
+    const focal = H * 0.85;
+    const dy = wy - CAM.height;
+    const sx = cx + focal * wx / dz;
+    const sy = horizonY - focal * dy / dz;
+    return { x: sx, y: sy, scale: focal / dz };
+  }
+
+  function drawSky() {
+    const horizonY = H * CAM.horizonRatio;
+    // 天空
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
+    skyGrad.addColorStop(0, '#2a1e2e');
+    skyGrad.addColorStop(0.5, '#5a3a3a');
+    skyGrad.addColorStop(1, '#d88f5a');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, horizonY);
+
+    // 太阳
+    const sunX = W * 0.72;
+    const sunY = horizonY - H * 0.08;
+    const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, H * 0.18);
+    sunGrad.addColorStop(0, 'rgba(255,220,150,0.9)');
+    sunGrad.addColorStop(0.3, 'rgba(255,160,80,0.4)');
+    sunGrad.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = sunGrad;
+    ctx.fillRect(0, 0, W, horizonY + H * 0.1);
+
+    // 地面
+    const groundGrad = ctx.createLinearGradient(0, horizonY, 0, H);
+    groundGrad.addColorStop(0, '#3a2a1a');
+    groundGrad.addColorStop(1, '#1a1010');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0, horizonY, W, H - horizonY);
+
+    // 远山
+    ctx.fillStyle = '#2a1a20';
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY);
+    const hills = 6;
+    for (let i = 0; i <= hills; i++) {
+      const x = (i / hills) * W;
+      const h = H * 0.03 * (1 + Math.sin(i * 1.7) * 0.5 + Math.sin(i * 3.1) * 0.3);
+      ctx.lineTo(x, horizonY - h);
+    }
+    ctx.lineTo(W, horizonY);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawRoad() {
+    const halfW = CONFIG.track.roadWidth / 2;
+    const startZ = 0;
+    const endZ = 400;
+    const segments = 40;
+
+    // 道路主体（用 quad strip）
+    ctx.beginPath();
+    let firstL = true;
+    const lefts = [], rights = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const z = startZ + (endZ - startZ) * Math.pow(t, 1.8);
+      const pL = projectPoint(-halfW, 0, z);
+      const pR = projectPoint(halfW, 0, z);
+      if (!pL || !pR) continue;
+      lefts.push(pL);
+      rights.push(pR);
+    }
+    if (lefts.length < 2) return;
+
+    // 路面
+    ctx.beginPath();
+    ctx.moveTo(lefts[0].x, lefts[0].y);
+    for (let i = 1; i < lefts.length; i++) ctx.lineTo(lefts[i].x, lefts[i].y);
+    for (let i = rights.length - 1; i >= 0; i--) ctx.lineTo(rights[i].x, rights[i].y);
+    ctx.closePath();
+    const roadGrad = ctx.createLinearGradient(0, H * CAM.horizonRatio, 0, H);
+    roadGrad.addColorStop(0, '#2a2a2d');
+    roadGrad.addColorStop(1, '#3a3a3d');
+    ctx.fillStyle = roadGrad;
+    ctx.fill();
+
+    // 车道线（沿 z 方向）
+    // 虚线：按 distance 滚动
+    const dashLen = 4;
+    const dashGap = 4;
+    const period = dashLen + dashGap;
+    const offset = state.distance % period;
+    const lineSegments = 30;
+    const zFar = 250;
+    ctx.strokeStyle = 'rgba(233,230,220,0.65)';
+    ctx.lineWidth = 2;
+    for (const laneX of [-3.5, 0, 3.5]) {
+      // 中心黄线 vs 侧边白线
+      if (laneX === 0) continue; // 中心双黄线单独画
+      for (let i = 0; i < lineSegments; i++) {
+        const z0 = i * period - offset;
+        const z1 = z0 + dashLen;
+        if (z1 < 0.5) continue;
+        if (z0 > zFar) break;
+        const z0c = Math.max(0.5, z0);
+        const z1c = Math.min(zFar, z1);
+        const p0a = projectPoint(laneX, 0.01, z0c);
+        const p1a = projectPoint(laneX, 0.01, z1c);
+        if (!p0a || !p1a) continue;
+        ctx.beginPath();
+        ctx.moveTo(p0a.x, p0a.y);
+        ctx.lineTo(p1a.x, p1a.y);
+        ctx.stroke();
+      }
+    }
+
+    // 中心双黄线（实线）
+    ctx.strokeStyle = 'rgba(242,201,76,0.85)';
+    ctx.lineWidth = 3;
+    for (const laneX of [-0.2, 0.2]) {
+      ctx.beginPath();
+      for (let i = 0; i < lefts.length; i++) {
+        const t = i / (lefts.length - 1);
+        const z = startZ + (endZ - startZ) * Math.pow(t, 1.8);
+        const p = projectPoint(laneX, 0.01, z);
+        if (!p) continue;
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+
+    // 边缘白线
+    ctx.strokeStyle = 'rgba(233,230,220,0.9)';
+    ctx.lineWidth = 3;
+    for (const laneX of [-halfW + 0.6, halfW - 0.6]) {
+      ctx.beginPath();
+      for (let i = 0; i < lefts.length; i++) {
+        const t = i / (lefts.length - 1);
+        const z = startZ + (endZ - startZ) * Math.pow(t, 1.8);
+        const p = projectPoint(laneX, 0.01, z);
+        if (!p) continue;
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function drawBarrier() {
+    const z = distanceToBarrier();
+    if (z < -1 || z > 600) return;
+    const halfW = CONFIG.track.roadWidth / 2 + 0.5;
+    const pTL = projectPoint(-halfW, 1.2, z);
+    const pTR = projectPoint(halfW, 1.2, z);
+    const pBL = projectPoint(-halfW, 0, z);
+    const pBR = projectPoint(halfW, 0, z);
+    if (!pTL || !pTR || !pBL || !pBR) return;
+
+    // 主体
+    ctx.beginPath();
+    ctx.moveTo(pTL.x, pTL.y);
+    ctx.lineTo(pTR.x, pTR.y);
+    ctx.lineTo(pBR.x, pBR.y);
+    ctx.lineTo(pBL.x, pBL.y);
+    ctx.closePath();
+    ctx.fillStyle = '#d8351b';
+    ctx.fill();
+    ctx.strokeStyle = '#ffb800';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // 黑白斜条纹
+    const barW = Math.abs(pTR.x - pTL.x);
+    if (barW > 20) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pTL.x, pTL.y);
+      ctx.lineTo(pTR.x, pTR.y);
+      ctx.lineTo(pBR.x, pBR.y);
+      ctx.lineTo(pBL.x, pBL.y);
+      ctx.closePath();
+      ctx.clip();
+      const h = pBR.y - pTR.y;
+      const stripeW = Math.max(8, barW / 16);
+      ctx.fillStyle = '#fff';
+      for (let i = -2; i < 24; i++) {
+        const x0 = pTL.x + i * stripeW * 2;
+        ctx.beginPath();
+        ctx.moveTo(x0, pTL.y);
+        ctx.lineTo(x0 + stripeW, pTL.y);
+        ctx.lineTo(x0 + stripeW * 0.5, pBR.y);
+        ctx.lineTo(x0 - stripeW * 0.5, pBR.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // 顶部警示灯
+    const topY = pTL.y;
+    const lampR = Math.max(2, barW / 40);
+    for (let i = 0; i < 5; i++) {
+      const t = (i + 0.5) / 5;
+      const lx = pTL.x + (pTR.x - pTL.x) * t;
+      ctx.fillStyle = (Math.floor(performance.now() / 200) + i) % 2 ? '#ff2020' : '#601010';
+      ctx.beginPath();
+      ctx.arc(lx, topY - lampR * 2, lampR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawDistanceMarkers() {
+    // 沿路每 100m 一个距离标记
+    const markers = [2400, 2300, 2200, 2100, 2000, 1800, 1600, 1400, 1200, 1000, 800, 600, 400, 200, 100, 50];
+    const travelled = state.distance;
+    for (const markerDist of markers) {
+      const z = markerDist - travelled;
+      if (z < 2 || z > 500) continue;
+      const p = projectPoint(CONFIG.track.roadWidth / 2 + 1.5, 0, z);
+      if (!p) continue;
+      const alpha = Math.max(0, Math.min(1, 1 - z / 400));
+      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.5})`;
+      ctx.font = `${Math.max(10, Math.min(28, p.scale * 0.6))}px sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${markerDist - travelled | 0}m`, p.x, p.y);
+    }
+  }
+
+  function drawCar() {
+    // 车辆在屏幕底部中央偏下
+    const baseX = W / 2;
+    const baseY = H * 0.85;
+    const scale = Math.min(W, H) * 0.0012;
+    const carW = 300 * scale;
+    const carH = 130 * scale;
+
+    ctx.save();
+    ctx.translate(baseX, baseY);
+    ctx.rotate(state.carRoll);
+    ctx.rotate(state.carTilt * 0.3);
+    ctx.scale(1, 1 - Math.abs(state.carTilt) * 0.1);
+
+    // 阴影
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(0, carH * 0.5, carW * 0.55, carH * 0.15, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 车身（简化为深色跑车轮廓）
+    ctx.fillStyle = '#1a1010';
+    ctx.beginPath();
+    ctx.moveTo(-carW * 0.5, carH * 0.15);
+    ctx.lineTo(-carW * 0.45, -carH * 0.15);
+    ctx.lineTo(-carW * 0.2, -carH * 0.42);
+    ctx.lineTo(carW * 0.2, -carH * 0.42);
+    ctx.lineTo(carW * 0.45, -carH * 0.15);
+    ctx.lineTo(carW * 0.5, carH * 0.15);
+    ctx.closePath();
+    ctx.fill();
+
+    // 金色饰条
+    ctx.strokeStyle = '#d8c39a';
+    ctx.lineWidth = Math.max(1, 2 * scale);
+    ctx.stroke();
+
+    // 挡风玻璃
+    ctx.fillStyle = 'rgba(80,120,160,0.6)';
+    ctx.beginPath();
+    ctx.moveTo(-carW * 0.18, -carH * 0.38);
+    ctx.lineTo(carW * 0.18, -carH * 0.38);
+    ctx.lineTo(carW * 0.24, -carH * 0.1);
+    ctx.lineTo(-carW * 0.24, -carH * 0.1);
+    ctx.closePath();
+    ctx.fill();
+
+    // 车灯
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(-carW * 0.38, carH * 0.05, carW * 0.05, carH * 0.06, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(carW * 0.38, carH * 0.05, carW * 0.05, carH * 0.06, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 尾灯（刹车时亮）
+    const brakeBright = state.powerCut ? Math.min(1, state.pedalForce / 100) : 0;
+    ctx.fillStyle = `rgba(255,40,20,${0.3 + brakeBright * 0.7})`;
+    ctx.shadowColor = `rgba(255,40,20,${brakeBright})`;
+    ctx.shadowBlur = 15 * brakeBright;
+    ctx.beginPath();
+    ctx.arc(-carW * 0.35, -carH * 0.1, carW * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(carW * 0.35, -carH * 0.1, carW * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // 车轮
+    const wheelR = carH * 0.22;
+    ctx.fillStyle = '#0a0a0a';
+    for (const wx of [-carW * 0.32, carW * 0.32]) {
+      ctx.beginPath();
+      ctx.arc(wx, carH * 0.2, wheelR, 0, Math.PI * 2);
+      ctx.fill();
+      // 轮毂
+      ctx.strokeStyle = state.brakeHeat > 0.3 ? `rgba(255,${100 - state.brakeHeat * 80 | 0},20,${state.brakeHeat})` : '#888';
+      ctx.lineWidth = Math.max(1, 2 * scale);
+      ctx.beginPath();
+      ctx.arc(wx, carH * 0.2, wheelR * 0.55, 0, Math.PI * 2);
+      ctx.stroke();
+      // 辐条（随速度旋转）
+      ctx.save();
+      ctx.translate(wx, carH * 0.2);
+      ctx.rotate(state.wheelSpin);
+      ctx.strokeStyle = '#555';
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(wheelR * 0.5, 0);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  function drawSpeedLines() {
+    // 速度线（速度越快越多）
+    const speedNorm = Math.min(1, state.speed * MS_TO_KMH / CONFIG.car.maxSpeedKmh);
+    if (speedNorm < 0.3) return;
+    const count = Math.floor(speedNorm * 30);
+    ctx.strokeStyle = `rgba(255,255,255,${speedNorm * 0.15})`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < count; i++) {
+      const y = Math.random() * H;
+      const len = 20 + Math.random() * 60 * speedNorm;
+      const x = Math.random() < 0.5 ? Math.random() * W * 0.3 : W - Math.random() * W * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + len);
+      ctx.stroke();
+    }
+  }
+
+  function render() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // 相机抖动
+    if (state.shake > 0) {
+      const s = state.shake * 8;
+      ctx.translate(
+        (Math.random() - 0.5) * s,
+        (Math.random() - 0.5) * s
+      );
+    }
+
+    drawSky();
+    drawRoad();
+    drawDistanceMarkers();
+    drawBarrier();
+    drawSpeedLines();
+    drawCar();
+
+    // 撞车闪白
+    if (state.flash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${state.flash * 0.8})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // 暗角
+    const vig = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // ============ 主循环 ============
+  let lastTime = 0;
+  function loop(now) {
+    requestAnimationFrame(loop);
+    if (!lastTime) lastTime = now;
+    let dt = (now - lastTime) / 1000;
+    lastTime = now;
+    if (dt > 0.05) dt = 0.05;
+
+    // 倒计时
+    if (state.phase === Phase.COUNTDOWN) {
+      state.countdown -= dt;
+      const tick = Math.ceil(state.countdown);
+      if (tick < state.lastCountdownTick && tick > 0) {
+        state.lastCountdownTick = tick;
+        showCountdown(`${tick}`);
+        audio.beep(false);
+      }
+      if (state.countdown <= 0) {
+        state.phase = Phase.ACCEL;
+        showCountdown('GO');
+        audio.beep(true);
+        setTimeout(() => showCountdown(null), 700);
+      }
+    }
+
+    // 物理（子步长固定）
+    const FIXED = 1 / 120;
+    state._acc = (state._acc || 0) + dt;
+    let iter = 0;
+    while (state._acc >= FIXED && iter < 8) {
+      state._acc -= FIXED;
+      iter++;
+      if (state.phase === Phase.ACCEL || state.phase === Phase.BRAKE) {
+        updatePhysics(FIXED);
+      } else if (state.phase === Phase.COUNTDOWN) {
+        // 倒计时不动
+      }
+    }
+
+    updateVisuals(dt);
+
+    if (state.phase !== Phase.MENU) {
+      updateHUD();
+    }
+
+    render();
+  }
+  requestAnimationFrame(loop);
+
+  // ============ 输入 ============
+  function setPressed(v) {
+    if (input.pressed === v) return;
+    input.pressed = v;
+  }
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (state.phase === Phase.MENU) {
+        if (!e.repeat) startGame();
+        return;
+      }
+      setPressed(true);
+    }
+  });
+  window.addEventListener('keyup', e => {
+    if (e.code === 'Space') setPressed(false);
+  });
+  window.addEventListener('blur', () => setPressed(false));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) setPressed(false);
+  });
+
+  brakeBtn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    audio.unlock();
+    setPressed(true);
+  });
+  for (const ev of ['pointerup', 'pointercancel']) {
+    window.addEventListener(ev, () => setPressed(false));
+  }
+
+  // 防止上下文菜单
+  window.addEventListener('contextmenu', e => e.preventDefault());
+
+  $('startBtn').addEventListener('click', () => startGame());
+  $('retryBtn').addEventListener('click', () => startGame());
+
+  // 初始
+  hud.classList.add('hidden');
+  menuEl.classList.remove('hidden');
+})();
+</script>
+</body>
+</html>
